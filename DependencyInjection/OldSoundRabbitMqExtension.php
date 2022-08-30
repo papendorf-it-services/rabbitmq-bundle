@@ -158,6 +158,8 @@ class OldSoundRabbitMqExtension extends Extension
                 $this->injectConnection($definition, $producer['connection']);
                 if ($this->collectorEnabled) {
                     $this->injectLoggedChannel($definition, $key, $producer['connection']);
+                } else {
+                    $definition->addArgument(null);
                 }
                 if (!$producer['auto_setup_fabric']) {
                     $definition->addMethodCall('disableAutoSetupFabric');
