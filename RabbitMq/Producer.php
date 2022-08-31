@@ -20,6 +20,14 @@ class Producer extends BaseAmqp implements ProducerInterface
     protected $confirmationTimeout = 0;
     protected $confirmSelect = false;
 
+    /**
+     * @return bool
+     */
+    public function isConfirmSelect(): bool
+    {
+        return $this->confirmSelect;
+    }
+
     public function setContentType($contentType)
     {
         $this->contentType = $contentType;
