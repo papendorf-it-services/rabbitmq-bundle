@@ -19,6 +19,7 @@ class Producer extends BaseAmqp implements ProducerInterface
     protected $acknowledged = true;
     protected $confirmationTimeout = 0;
     protected $confirmSelect = false;
+    protected $initialized = false;
 
     /**
      * @return bool
@@ -86,6 +87,9 @@ class Producer extends BaseAmqp implements ProducerInterface
         if ($this->autoSetupFabric) {
             $this->setupFabric();
         }
+        if (!$this->initialized) {
+            $this->initializeProducer();
+        }
 
         $msg = new AMQPMessage((string) $msgBody, array_merge($this->getBasicProperties(), $additionalProperties));
 
@@ -121,7 +125,7 @@ class Producer extends BaseAmqp implements ProducerInterface
      */
     protected function initializeProducer(): void
     {
-        if ($this->confirmSelect) {
+        if ($this->confirmSelect && $this->conn->isConnected()) {
             $this->getChannel()->confirm_select();
             $this->getChannel()->set_ack_handler(
                 function (AMQPMessage $message) {
@@ -134,6 +138,7 @@ class Producer extends BaseAmqp implements ProducerInterface
                     $this->acknowledged = false;
                 }
             );
+            $this->initialized = true;
         }
     }
 }
