@@ -159,10 +159,23 @@ class OldSoundRabbitMqExtension extends Extension
                 $this->injectConnection($definition, $producer['connection']);
                 if ($this->collectorEnabled) {
                     $this->injectLoggedChannel($definition, $key, $producer['connection']);
+                } else {
+                    $definition->addArgument(null);
                 }
                 if (!$producer['auto_setup_fabric']) {
                     $definition->addMethodCall('disableAutoSetupFabric');
                 }
+                $confirmSelect = false;
+                if (isset($producer['confirm_select'])) {
+                    $definition->addArgument(null);
+                    $confirmSelect = boolval($producer['confirm_select']);
+                    $definition->addArgument($confirmSelect);
+                }
+                $confirmationTimeout = $confirmSelect ? 10 : 0;
+                if (isset($producer['confirm_timeout'])) {
+                    $confirmationTimeout = intval($producer['confirm_timeout']);
+                }
+                $definition->addMethodCall('setConfirmationTimeout', array($confirmationTimeout));
 
                 if ($producer['enable_logger']) {
                     $this->injectLogger($definition);
@@ -186,7 +199,6 @@ class OldSoundRabbitMqExtension extends Extension
                         ->registerAliasForArgument($producerServiceName, $producer['class'], $argName)
                         ->setPublic(false);
                 }
-
                 $definition->addMethodCall('setDefaultRoutingKey', [$producer['default_routing_key']]);
                 $definition->addMethodCall('setContentType', [$producer['default_content_type']]);
                 $definition->addMethodCall('setDeliveryMode', [$producer['default_delivery_mode']]);
