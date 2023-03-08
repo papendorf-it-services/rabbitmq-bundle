@@ -2,7 +2,7 @@
 
 namespace OldSound\RabbitMqBundle\Event;
 
-use OldSound\RabbitMqBundle\RabbitMq\Consumer;
+use OldSound\RabbitMqBundle\RabbitMq\DequeuerInterface;
 use PhpAmqpLib\Message\AMQPMessage;
 
 /**
@@ -12,14 +12,15 @@ use PhpAmqpLib\Message\AMQPMessage;
  */
 class AfterProcessingMessageEvent extends AMQPEvent
 {
-    public const NAME = AMQPEvent::AFTER_PROCESSING_MESSAGE;
+    const NAME = AMQPEvent::AFTER_PROCESSING_MESSAGE;
 
     /**
      * AfterProcessingMessageEvent constructor.
      *
+     * @param DequeuerInterface $consumer
      * @param AMQPMessage $AMQPMessage
      */
-    public function __construct(Consumer $consumer, AMQPMessage $AMQPMessage)
+    public function __construct(DequeuerInterface $consumer, AMQPMessage $AMQPMessage)
     {
         $this->setConsumer($consumer);
         $this->setAMQPMessage($AMQPMessage);

@@ -2,7 +2,7 @@
 
 namespace OldSound\RabbitMqBundle\Event;
 
-use OldSound\RabbitMqBundle\RabbitMq\Consumer;
+use OldSound\RabbitMqBundle\RabbitMq\DequeuerInterface;
 
 /**
  * Class OnConsumeEvent
@@ -11,14 +11,14 @@ use OldSound\RabbitMqBundle\RabbitMq\Consumer;
  */
 class OnConsumeEvent extends AMQPEvent
 {
-    public const NAME = AMQPEvent::ON_CONSUME;
+    const NAME = AMQPEvent::ON_CONSUME;
 
     /**
      * OnConsumeEvent constructor.
      *
-     * @param Consumer $consumer
+     * @param DequeuerInterface $consumer
      */
-    public function __construct(Consumer $consumer)
+    public function __construct(DequeuerInterface $consumer)
     {
         $this->setConsumer($consumer);
     }

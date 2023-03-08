@@ -2,6 +2,7 @@
 
 namespace OldSound\RabbitMqBundle\RabbitMq;
 
+use OldSound\RabbitMqBundle\Event\OnIdleEvent;
 use PhpAmqpLib\Channel\AMQPChannel;
 use PhpAmqpLib\Exception\AMQPRuntimeException;
 use PhpAmqpLib\Exception\AMQPTimeoutException;
@@ -52,7 +53,7 @@ class BatchConsumer extends BaseAmqp implements DequeuerInterface
     /**
      * @var array
      */
-    protected $messages = [];
+    protected $messages = array();
 
     /**
      * @var int
@@ -77,6 +78,11 @@ class BatchConsumer extends BaseAmqp implements DequeuerInterface
 
     /** @var int */
     private $batchAmountTarget;
+
+    /**
+     * @var \DateTime|null
+     */
+    protected $lastActivityDateTime;
 
     /**
      * @param \DateTime|null $dateTime
@@ -112,6 +118,7 @@ class BatchConsumer extends BaseAmqp implements DequeuerInterface
 
         $this->setupConsumer();
 
+        $this->setLastActivityDateTime(new \DateTime());
         while ($this->getChannel()->is_consuming()) {
             if ($this->isCompleteBatch()) {
                 $this->batchConsume();
@@ -124,16 +131,28 @@ class BatchConsumer extends BaseAmqp implements DequeuerInterface
 
             try {
                 $this->getChannel()->wait(null, false, $timeout);
+                $this->setLastActivityDateTime(new \DateTime());
             } catch (AMQPTimeoutException $e) {
+                $now = time();
+
                 if (!$this->isEmptyBatch()) {
                     $this->batchConsume();
                     $this->maybeStopConsumer();
                 } elseif ($this->keepAlive === true) {
                     continue;
-                } elseif (null !== $this->getIdleTimeoutExitCode()) {
-                    return $this->getIdleTimeoutExitCode();
-                } else {
-                    throw $e;
+                } elseif ($this->getIdleTimeout()
+                    && ($this->getLastActivityDateTime()->getTimestamp() + $this->getIdleTimeout() <= $now)
+                ) {
+                    $idleEvent = new OnIdleEvent($this);
+                    $this->dispatchEvent(OnIdleEvent::NAME, $idleEvent);
+
+                    if ($idleEvent->isForceStop()) {
+                        if (null !== $this->getIdleTimeoutExitCode()) {
+                            return $this->getIdleTimeoutExitCode();
+                        } else {
+                            throw $e;
+                        }
+                    }
                 }
             }
         }
@@ -146,42 +165,41 @@ class BatchConsumer extends BaseAmqp implements DequeuerInterface
         try {
             $processFlags = call_user_func($this->callback, $this->messages);
             $this->handleProcessMessages($processFlags);
-            $this->logger->debug('Queue message processed', [
-                'amqp' => [
+            $this->logger->debug('Queue message processed', array(
+                'amqp' => array(
                     'queue' => $this->queueOptions['name'],
                     'messages' => $this->messages,
-                    'return_codes' => $processFlags,
-                ],
-            ]);
+                    'return_codes' => $processFlags
+                )
+            ));
         } catch (Exception\StopConsumerException $e) {
-            $this->logger->info('Consumer requested stop', [
-                'amqp' => [
+            $this->logger->info('Consumer requested restart', array(
+                'amqp' => array(
                     'queue' => $this->queueOptions['name'],
                     'message' => $this->messages,
-                    'stacktrace' => $e->getTraceAsString(),
-                ],
-            ]);
-            $this->handleProcessMessages($e->getHandleCode());
+                    'stacktrace' => $e->getTraceAsString()
+                )
+            ));
             $this->resetBatch();
             $this->stopConsuming();
         } catch (\Exception $e) {
-            $this->logger->error($e->getMessage(), [
-                'amqp' => [
+            $this->logger->error($e->getMessage(), array(
+                'amqp' => array(
                     'queue' => $this->queueOptions['name'],
                     'message' => $this->messages,
-                    'stacktrace' => $e->getTraceAsString(),
-                ],
-            ]);
+                    'stacktrace' => $e->getTraceAsString()
+                )
+            ));
             $this->resetBatch();
             throw $e;
         } catch (\Error $e) {
-            $this->logger->error($e->getMessage(), [
-                'amqp' => [
+            $this->logger->error($e->getMessage(), array(
+                'amqp' => array(
                     'queue' => $this->queueOptions['name'],
                     'message' => $this->messages,
-                    'stacktrace' => $e->getTraceAsString(),
-                ],
-            ]);
+                    'stacktrace' => $e->getTraceAsString()
+                )
+            ));
             $this->resetBatch();
             throw $e;
         }
@@ -214,18 +232,17 @@ class BatchConsumer extends BaseAmqp implements DequeuerInterface
         if ($processFlag === ConsumerInterface::MSG_REJECT_REQUEUE || false === $processFlag) {
             // Reject and requeue message to RabbitMQ
             $this->getMessageChannel($deliveryTag)->basic_reject($deliveryTag, true);
-        } elseif ($processFlag === ConsumerInterface::MSG_SINGLE_NACK_REQUEUE) {
+        } else if ($processFlag === ConsumerInterface::MSG_SINGLE_NACK_REQUEUE) {
             // NACK and requeue message to RabbitMQ
             $this->getMessageChannel($deliveryTag)->basic_nack($deliveryTag, false, true);
-        } elseif ($processFlag === ConsumerInterface::MSG_REJECT) {
+        } else if ($processFlag === ConsumerInterface::MSG_REJECT) {
             // Reject and drop
             $this->getMessageChannel($deliveryTag)->basic_reject($deliveryTag, false);
-        } elseif ($processFlag === ConsumerInterface::MSG_ACK_SENT) {
-            // do nothing, ACK should be already sent
         } else {
             // Remove message from queue only if callback return not false
             $this->getMessageChannel($deliveryTag)->basic_ack($deliveryTag);
         }
+
     }
 
     /**
@@ -276,7 +293,7 @@ class BatchConsumer extends BaseAmqp implements DequeuerInterface
             return $processFlags;
         }
 
-        $response = [];
+        $response = array();
         foreach ($this->messages as $deliveryTag => $message) {
             $response[$deliveryTag] = $processFlags;
         }
@@ -290,7 +307,7 @@ class BatchConsumer extends BaseAmqp implements DequeuerInterface
      */
     private function resetBatch()
     {
-        $this->messages = [];
+        $this->messages = array();
         $this->batchCounter = 0;
     }
 
@@ -312,9 +329,10 @@ class BatchConsumer extends BaseAmqp implements DequeuerInterface
      */
     private function getMessage($deliveryTag)
     {
-        return $this->messages[$deliveryTag]
-            ?? null
-        ;
+        return isset($this->messages[$deliveryTag])
+            ? $this->messages[$deliveryTag]
+            : null
+            ;
     }
 
     /**
@@ -355,7 +373,7 @@ class BatchConsumer extends BaseAmqp implements DequeuerInterface
             $this->setupFabric();
         }
 
-        $this->getChannel()->basic_consume($this->queueOptions['name'], $this->getConsumerTag(), false, false, false, false, [$this, 'processMessage']);
+        $this->getChannel()->basic_consume($this->queueOptions['name'], $this->getConsumerTag(), false, false, false, false, array($this, 'processMessage'));
     }
 
     /**
@@ -593,5 +611,21 @@ class BatchConsumer extends BaseAmqp implements DequeuerInterface
         }
 
         $this->forceStopConsumer();
+    }
+
+    /**
+     * @return \DateTime|null
+     */
+    public function getLastActivityDateTime(): ?\DateTime
+    {
+        return $this->lastActivityDateTime;
+    }
+
+    /**
+     * @param \DateTime|null $lastActivityDateTime
+     */
+    public function setLastActivityDateTime(?\DateTime $lastActivityDateTime): void
+    {
+        $this->lastActivityDateTime = $lastActivityDateTime;
     }
 }
