@@ -3,3 +3,8 @@ composer.phar
 vendor
 .phpunit.result.cache
 .php-cs-fixer.cache
+.idea/modules.xml
+.idea/php.xml
+.idea/PitsRabbitMQBundle.iml
+.idea/vcs.xml
+.idea/workspace.xml
