@@ -10,7 +10,7 @@
 
 ## About ##
 
-The RabbitMqBundle incorporates messaging in your application via [RabbitMQ](http://www.rabbitmq.com/) using the [php-amqplib](http://github.com/php-amqplib/php-amqplib) library.
+The `RabbitMqBundle` incorporates messaging in your application via [RabbitMQ](http://www.rabbitmq.com/) using the [php-amqplib](http://github.com/php-amqplib/php-amqplib) library.
 
 The bundle implements several messaging patterns as seen on the [Thumper](https://github.com/php-amqplib/Thumper) library. Therefore publishing messages to RabbitMQ from a Symfony controller is as easy as:
 
@@ -31,11 +31,10 @@ This bundle was presented at [Symfony Live Paris 2011](http://www.symfony-live.c
 
 ## Version 2 ##
 Due to the breaking changes happened caused by Symfony >=4.4, a new tag was released, making the bundle compatible with Symfony >=4.4.
-Also it eliminates a lot notices caused by symfony event dispatcher in Symfony 4.3.
 
 ## Installation ##
 
-### For Symfony Framework >= 4.3 ###
+### For Symfony Framework >= 4.4 ###
 
 Require the bundle and its dependencies with composer:
 
@@ -131,9 +130,12 @@ old_sound_rabbit_mq:
             url: 'amqp://guest:password@localhost:5672/vhost?lazy=1&connection_timeout=6'
     producers:
         upload_picture:
-            connection:       default
-            exchange_options: {name: 'upload-picture', type: direct}
-            service_alias:    my_app_service # no alias by default
+            connection:            default
+            exchange_options:      {name: 'upload-picture', type: direct}
+            service_alias:         my_app_service # no alias by default
+            default_routing_key:   'optional.routing.key' # defaults to '' if not set
+            default_content_type:  'content/type' # defaults to 'text/plain'
+            default_delivery_mode: 2 # optional. 1 means non-persistent, 2 means persistent. Defaults to "2".
     consumers:
         upload_picture:
             connection:       default
@@ -166,6 +168,7 @@ The argument value must be a list of datatype and value. Valid datatypes are:
 * `T` - Timestamps
 * `F` - Table
 * `A` - Array
+* `t` - Bool
 
 Adapt the `arguments` according to your needs.
 
@@ -284,8 +287,7 @@ As you can see, if in your configuration you have a producer called __upload\_pi
 
 Besides the message itself, the `OldSound\RabbitMqBundle\RabbitMq\Producer#publish()` method also accepts an optional routing key parameter and an optional array of additional properties. The array of additional properties allows you to alter the properties with which an `PhpAmqpLib\Message\AMQPMessage` object gets constructed by default. This way, for example, you can change the application headers.
 
-You can use __setContentType__ and __setDeliveryMode__ methods in order to set the message content type and the message
-delivery mode respectively. Default values are __text/plain__ for content type and __2__ for delivery mode.
+You can use __setContentType__ and __setDeliveryMode__ methods in order to set the message content type and the message delivery mode respectively, overriding any default set in the "producers" config section. If not overriden by either the "producers" configuration or an explicit call to these methods (as per the below example), the default values are __text/plain__ for content type and __2__ for delivery mode.
 
 ```php
 $this->get('old_sound_rabbit_mq.upload_picture_producer')->setContentType('application/json');
@@ -384,7 +386,7 @@ class OnConsumeEvent extends AMQPEvent
 ```
 
 Let`s say you need to sleep / stop consumer/s on a new application deploy.
-You can listen for OnConsumeEvent (\OldSound\RabbitMqBundle\Event\OnConsumeEvent) and check for new application deploy.
+You can listen for `OldSound\RabbitMqBundle\Event\OnConsumeEvent` and check for new application deploy.
 
 ##### BEFORE PROCESSING MESSAGE #####
 
@@ -405,7 +407,7 @@ class BeforeProcessingMessageEvent extends AMQPEvent
     }
 }
 ``` 
-Event raised before processing a AMQPMessage.
+Event raised before processing a `AMQPMessage`.
 
 ##### AFTER PROCESSING MESSAGE #####
 
@@ -426,7 +428,7 @@ class AfterProcessingMessageEvent extends AMQPEvent
     }
 }
 ``` 
-Event raised after processing a AMQPMessage.
+Event raised after processing a `AMQPMessage`.
 If the process message will throw an Exception the event will not raise.
 
 ##### IDLE MESSAGE #####
@@ -458,7 +460,7 @@ By default process exit on idle timeout, you can prevent it by setting `$event->
 #### Idle timeout ####
 
 If you need to set a timeout when there are no messages from your queue during a period of time, you can set the `idle_timeout` in seconds.
-The `idle_timeout_exit_code` specifies what exit code should be returned by the consumer when the idle timeout occurs. Without specifying it, the consumer will throw an **PhpAmqpLib\Exception\AMQPTimeoutException** exception.
+The `idle_timeout_exit_code` specifies what exit code should be returned by the consumer when the idle timeout occurs. Without specifying it, the consumer will throw an `PhpAmqpLib\Exception\AMQPTimeoutException` exception.
 
 ```yaml
 consumers:
@@ -541,7 +543,7 @@ used for arguments autowiring based on declared type and argument name. This all
 example to:
 
 ```php
-public function indexAction($name, ProducerInteface $uploadPictureProducer)
+public function indexAction($name, ProducerInterface $uploadPictureProducer)
 {
     $msg = array('user_id' => 1235, 'image_path' => '/path/to/new/pic.png');
     $uploadPictureProducer->publish(serialize($msg));
@@ -555,12 +557,12 @@ argument name. `upload_picture_producer` producer key would also be aliased to `
 It is best to avoid names similar in such manner.
 
 All producers are aliased to `OldSound\RabbitMqBundle\RabbitMq\ProducerInterface` and producer class option from 
-configuration. In sandbox mode only ProducerInterface aliases are made. It is highly recommended to use ProducerInterface
+configuration. In sandbox mode only `ProducerInterface` aliases are made. It is highly recommended to use `ProducerInterface`
 class when type hinting arguments for producer injection.
 
-All consumers are aliased to 'OldSound\RabbitMqBundle\RabbitMq\ConsumerInterface' and '%old_sound_rabbit_mq.consumer.class%'
+All consumers are aliased to `OldSound\RabbitMqBundle\RabbitMq\ConsumerInterface` and `%old_sound_rabbit_mq.consumer.class%`
 configuration option value. There is no difference between regular and sandbox mode. It is highly recommended to use
-ConsumerInterface when type hinting arguments for client injection.
+`ConsumerInterface` when type hinting arguments for client injection.
 
 
 ### Callbacks ###
@@ -619,7 +621,7 @@ And that's it!
 ### Audit / Logging ###
 
 This was a requirement to have a traceability of messages received/published.
-In order to enable this you'll need to add "enable_logger" config to consumers or publishers.
+In order to enable this you'll need to add `enable_logger` config to consumers or publishers.
 
 ```yaml
 consumers:
@@ -631,7 +633,7 @@ consumers:
         enable_logger: true
 ```
 
-If you would like you can also treat logging from queues with different handlers in monolog, by referencing channel "phpamqplib"
+If you would like you can also treat logging from queues with different handlers in monolog, by referencing channel `phpamqplib`.
 
 ### RPC or Reply/Response ###
 
@@ -687,7 +689,7 @@ The arguments we are sending are the __min__ and __max__ values for the `rand()`
 
 The final piece is to get the reply. Our PHP script will block till the server returns a value. The __$replies__ variable will be an associative array where each reply from the server will contained in the respective __request\_id__ key.
 
-By default the RPC Client expects the response to be serialized. If the server you are working with returns a non-serialized result then set the RPC client expect_serialized_response option to false. For example, if the integer_store server didn't serialize the result the client would be set as below:
+By default the RPC Client expects the response to be serialized. If the server you are working with returns a non-serialized result then set the RPC client `expect_serialized_response` option to false. For example, if the **integer_store** server didn't serialize the result the client would be set as below:
 
 ```yaml
 rpc_clients:
@@ -717,7 +719,7 @@ As you can guess, we can also make __parallel RPC calls__.
 
 ### Parallel RPC ###
 
-Let's say that for rendering some webpage, you need to perform two database queries, one taking 5 seconds to complete and the other one taking 2 seconds –very expensive queries–. If you execute them sequentially, then your page will be ready to deliver in about 7 seconds. If you run them in parallel then you will have your page served in about 5 seconds. With RabbitMqBundle we can do such parallel calls with ease. Let's define a parallel client in the config and another RPC server:
+Let's say that for rendering some webpage, you need to perform two database queries, one taking 5 seconds to complete and the other one taking 2 seconds –very expensive queries–. If you execute them sequentially, then your page will be ready to deliver in about 7 seconds. If you run them in parallel then you will have your page served in about 5 seconds. With `RabbitMqBundle` we can do such parallel calls with ease. Let's define a parallel client in the config and another RPC server:
 
 ```yaml
 rpc_clients:
@@ -939,7 +941,7 @@ batch_consumers:
 
 *Note*: If the `keep_alive` option is set to `true`, `idle_timeout_exit_code` will be ignored and the consumer process continues.
 
-You can implement a batch consumer that will acknowledge all messages in one return or you can have control on what message to acknoledge.
+You can implement a batch consumer that will acknowledge all messages in one return or you can have control on what message to acknowledge.
 
 ```php
 namespace AppBundle\Service;
@@ -1011,9 +1013,8 @@ How to run the following batch consumer:
     $ ./bin/console rabbitmq:batch:consumer batch_basic_consumer -w
 ```
 
-Important: BatchConsumers will not have the -m|messages option available
-Important: BatchConsumers can also have the -b|batches option available if you want to only consume a specific number of batches and then stop the consumer.
-! Give the number of the batches only if you want the consumer to stop after those batch messages were consumed.! 
+Important: BatchConsumers will not have the `-m|messages` option available
+Important: BatchConsumers can also have the `-b|batches` option available if you want to only consume a specific number of batches and then stop the consumer. Give the number of the batches only if you want the consumer to stop after those batch messages were consumed!
 
 ### STDIN Producer ###
 
