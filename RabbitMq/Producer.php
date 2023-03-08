@@ -19,6 +19,15 @@ class Producer extends BaseAmqp implements ProducerInterface
     protected $acknowledged = true;
     protected $confirmationTimeout = 0;
     protected $confirmSelect = false;
+    protected $initialized = false;
+
+    /**
+     * @return bool
+     */
+    public function isConfirmSelect(): bool
+    {
+        return $this->confirmSelect;
+    }
 
     public function setContentType($contentType)
     {
@@ -78,6 +87,9 @@ class Producer extends BaseAmqp implements ProducerInterface
         if ($this->autoSetupFabric) {
             $this->setupFabric();
         }
+        if (!$this->initialized) {
+            $this->initializeProducer();
+        }
 
         $msg = new AMQPMessage((string) $msgBody, array_merge($this->getBasicProperties(), $additionalProperties));
 
@@ -89,14 +101,14 @@ class Producer extends BaseAmqp implements ProducerInterface
         $real_routingKey = !empty($routingKey) ? $routingKey : $this->defaultRoutingKey;
         $this->getChannel()->basic_publish($msg, $this->exchangeOptions['name'], (string)$real_routingKey);
         $this->getChannel()->wait_for_pending_acks($this->confirmationTimeout);
-        $this->logger->debug('AMQP message published', [
-            'amqp' => [
+        $this->logger->debug('AMQP message published', array(
+            'amqp' => array(
                 'body' => $msgBody,
                 'routingkeys' => $routingKey,
                 'properties' => $additionalProperties,
-                'headers' => $headers,
-            ],
-        ]);
+                'headers' => $headers
+            )
+        ));
         return $this->acknowledged;
     }
 
@@ -113,7 +125,7 @@ class Producer extends BaseAmqp implements ProducerInterface
      */
     protected function initializeProducer(): void
     {
-        if ($this->confirmSelect) {
+        if ($this->confirmSelect && $this->conn->isConnected()) {
             $this->getChannel()->confirm_select();
             $this->getChannel()->set_ack_handler(
                 function (AMQPMessage $message) {
@@ -126,6 +138,7 @@ class Producer extends BaseAmqp implements ProducerInterface
                     $this->acknowledged = false;
                 }
             );
+            $this->initialized = true;
         }
     }
 }
