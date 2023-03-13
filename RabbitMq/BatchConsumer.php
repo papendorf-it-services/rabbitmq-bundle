@@ -2,6 +2,9 @@
 
 namespace OldSound\RabbitMqBundle\RabbitMq;
 
+use OldSound\RabbitMqBundle\Event\AfterProcessingMessageEvent;
+use OldSound\RabbitMqBundle\Event\BeforeProcessingMessageEvent;
+use OldSound\RabbitMqBundle\Event\OnConsumeEvent;
 use OldSound\RabbitMqBundle\Event\OnIdleEvent;
 use PhpAmqpLib\Channel\AMQPChannel;
 use PhpAmqpLib\Exception\AMQPRuntimeException;
@@ -120,6 +123,7 @@ class BatchConsumer extends BaseAmqp implements DequeuerInterface
 
         $this->setLastActivityDateTime(new \DateTime());
         while ($this->getChannel()->is_consuming()) {
+            $this->dispatchEvent(OnConsumeEvent::NAME, new OnConsumeEvent($this));
             if ($this->isCompleteBatch()) {
                 $this->batchConsume();
             }
@@ -162,9 +166,17 @@ class BatchConsumer extends BaseAmqp implements DequeuerInterface
 
     private function batchConsume()
     {
+        $this->dispatchEvent(
+            BeforeProcessingMessageEvent::NAME,
+            new BeforeProcessingMessageEvent($this, $this->messages)
+        );
         try {
             $processFlags = call_user_func($this->callback, $this->messages);
             $this->handleProcessMessages($processFlags);
+            $this->dispatchEvent(
+                AfterProcessingMessageEvent::NAME,
+                new AfterProcessingMessageEvent($this, $this->messages)
+            );
             $this->logger->debug('Queue message processed', array(
                 'amqp' => array(
                     'queue' => $this->queueOptions['name'],

@@ -18,11 +18,11 @@ class AfterProcessingMessageEvent extends AMQPEvent
      * AfterProcessingMessageEvent constructor.
      *
      * @param DequeuerInterface $consumer
-     * @param AMQPMessage $AMQPMessage
+     * @param AMQPMessage[] $AMQPMessages
      */
-    public function __construct(DequeuerInterface $consumer, AMQPMessage $AMQPMessage)
+    public function __construct(DequeuerInterface $consumer, array $AMQPMessages)
     {
         $this->setConsumer($consumer);
-        $this->setAMQPMessage($AMQPMessage);
+        $this->setAMQPMessages($AMQPMessages);
     }
 }

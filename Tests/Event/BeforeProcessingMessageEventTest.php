@@ -30,8 +30,8 @@ class BeforeProcessingMessageEventTest extends TestCase
     {
         $AMQPMessage = new AMQPMessage('body');
         $consumer = $this->getConsumer();
-        $event = new BeforeProcessingMessageEvent($consumer, $AMQPMessage);
-        $this->assertSame($AMQPMessage, $event->getAMQPMessage());
+        $event = new BeforeProcessingMessageEvent($consumer, [$AMQPMessage]);
+        $this->assertSame($AMQPMessage, $event->getAMQPMessages()[0]);
         $this->assertSame($consumer, $event->getConsumer());
     }
 }

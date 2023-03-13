@@ -142,14 +142,14 @@ class Consumer extends BaseConsumer
     {
         $this->dispatchEvent(
             BeforeProcessingMessageEvent::NAME,
-            new BeforeProcessingMessageEvent($this, $msg)
+            new BeforeProcessingMessageEvent($this, [$msg])
         );
         try {
             $processFlag = call_user_func($callback, $msg);
             $this->handleProcessMessage($msg, $processFlag);
             $this->dispatchEvent(
                 AfterProcessingMessageEvent::NAME,
-                new AfterProcessingMessageEvent($this, $msg)
+                new AfterProcessingMessageEvent($this, [$msg])
             );
             $this->logger->debug('Queue message processed', [
                 'amqp' => [

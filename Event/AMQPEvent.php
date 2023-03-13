@@ -20,9 +20,9 @@ class AMQPEvent extends AbstractAMQPEvent
     const AFTER_PROCESSING_MESSAGE  = 'after_processing';
 
     /**
-     * @var AMQPMessage
+     * @var AMQPMessage[]
      */
-    protected $AMQPMessage;
+    protected $AMQPMessages;
 
     /**
      * @var DequeuerInterface
@@ -30,21 +30,21 @@ class AMQPEvent extends AbstractAMQPEvent
     protected $consumer;
 
     /**
-     * @return AMQPMessage
+     * @return AMQPMessage[]
      */
-    public function getAMQPMessage()
+    public function getAMQPMessages()
     {
-        return $this->AMQPMessage;
+        return $this->AMQPMessages;
     }
 
     /**
-     * @param AMQPMessage $AMQPMessage
+     * @param AMQPMessage[] $AMQPMessages
      *
      * @return AMQPEvent
      */
-    public function setAMQPMessage(AMQPMessage $AMQPMessage)
+    public function setAMQPMessages(array $AMQPMessages)
     {
-        $this->AMQPMessage = $AMQPMessage;
+        $this->AMQPMessages = $AMQPMessages;
 
         return $this;
     }

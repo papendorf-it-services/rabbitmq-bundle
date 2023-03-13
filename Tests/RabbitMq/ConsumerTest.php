@@ -87,12 +87,12 @@ class ConsumerTest extends TestCase
         $eventDispatcher->expects($this->atLeastOnce())
             ->method('dispatch')
             ->withConsecutive(
-                [new BeforeProcessingMessageEvent($consumer, $amqpMessage), BeforeProcessingMessageEvent::NAME],
-                [new AfterProcessingMessageEvent($consumer, $amqpMessage), AfterProcessingMessageEvent::NAME]
+                [new BeforeProcessingMessageEvent($consumer, [$amqpMessage]), BeforeProcessingMessageEvent::NAME],
+                [new AfterProcessingMessageEvent($consumer, [$amqpMessage]), AfterProcessingMessageEvent::NAME]
             )
             ->willReturnOnConsecutiveCalls(
-                new BeforeProcessingMessageEvent($consumer, $amqpMessage),
-                new AfterProcessingMessageEvent($consumer, $amqpMessage)
+                new BeforeProcessingMessageEvent($consumer, [$amqpMessage]),
+                new AfterProcessingMessageEvent($consumer, [$amqpMessage])
             );
 
         $consumer->processMessage($amqpMessage);
