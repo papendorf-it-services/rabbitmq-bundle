@@ -13,3 +13,4 @@ vendor
 .idea/php.xml
 .idea/vcs.xml
 .idea/php.xml
+.claude/settings.local.json

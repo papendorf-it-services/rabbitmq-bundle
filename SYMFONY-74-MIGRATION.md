@@ -8,11 +8,19 @@ Companion document: `D:\Development\PHP-Projects\Bundles\Pits\rabbitmq\FORK-MIGR
 (written from the consuming bundle's perspective, against tag `V2.11.9`). This document verifies,
 corrects and extends it against the *current* HEAD of this repo and the *current* upstream release.
 
+**Revised 2026-09-07** against upstream `master` `56305f1` (2.19.0 + "Feature/cosmetics" #745,
+2026-03-06) and against the actual consuming code. Corrections were folded into §6 (E-4, withdrawn),
+§7 item 1, §11.2 (producer/consumer counts, and the trees are *not* identical) and §11.7 item 2 —
+each marked inline. The per-enhancement implementation specs
+derived from this analysis live in [`specs/`](specs/README.md); where they and this document
+disagree on implementation detail, the specs are newer.
+
 ---
 
 ## 1. Verdict
 
-**Re-fork upstream 2.19.0 and re-apply the four enhancements. Do not forward-port this tree.**
+**Re-fork upstream 2.19.0 and re-apply the three enhancements. Do not forward-port this tree.**
+(E-1–E-3. E-4 was withdrawn on 2026-09-07 — see §6.)
 
 The recommendation in `FORK-MIGRATION-NOTES.md` is correct. The evidence gathered here makes the case
 stronger than that document states, for three reasons:
@@ -133,7 +141,7 @@ Measured diff, HEAD vs upstream 2.19.0 (line endings normalised, `Tests/` exclud
 
 The bulk of that diff is style reversion (short array syntax → `array()`, `public const` → `const`,
 `else if`, stripped `: void`, removed trailing commas) which disappears on re-fork at no cost. The
-genuinely valuable content is E-1…E-4 (§6).
+genuinely valuable content is E-1…E-3 (§6).
 
 Beyond the two blockers in §3, these upstream improvements are **currently missing here** and would
 arrive for free:
@@ -186,7 +194,8 @@ Two items from the earlier plan's §6 are fork-local work regardless of re-forki
 
 ## 6. The enhancements, re-assessed
 
-All four remain absent from upstream 2.19.0. Two need design changes.
+E-1, E-2 and E-3 remain absent from upstream 2.19.0. Two need design changes. E-4 was withdrawn
+on 2026-09-07 — it was never a fork change; see below.
 
 > **Scope note (see §11).** Only **EnVi** is in scope for the migration; Redbus stays on `2.11.*` and
 > EnViSCPDaq is obsolete. EnVi configures **no batch consumers**, so **E-1 is the only enhancement it
@@ -396,25 +405,39 @@ public function setAMQPMessages(array $AMQPMessages): self
 }
 ```
 
-### E-4 — `AMQPConnectionFactory` ordering fix · **carry over**
+### E-4 — `AMQPConnectionFactory` ordering · ~~**carry over**~~ **withdrawn — not a fork change**
 
-`RabbitMq/AMQPConnectionFactory.php`. Move the `$parametersProvider` merge to *after* `ssl_context`
-processing so a provider can override the computed `context` key:
+> **Correction, 2026-09-07.** This entry was wrong. E-4 is not an enhancement, there is nothing to
+> carry over, and the count of "four enhancements" used elsewhere in this document is really three.
+
+`git diff 8ebaf0d..HEAD -- RabbitMq/AMQPConnectionFactory.php` is **empty**: the fork never touched
+this file. What the earlier analysis read as a deliberate fork fix is simply the *older upstream*
+ordering, frozen at the fork point.
+
+Upstream changed it in `abe69ad` — "Fix for creating a stream context from a custom user parameters"
+(#711) — and moved the `$parametersProvider` merge to run *before* the `ssl_context` processing:
 
 ```php
+// upstream 2.19.0
+if ($parametersProvider) {
+    $this->parameters = array_merge($this->parameters, $parametersProvider->getConnectionParameters());
+}
+
 if (is_array($this->parameters['ssl_context'])) {
     $this->parameters['context'] = !empty($this->parameters['ssl_context'])
         ? stream_context_create(['ssl' => $this->parameters['ssl_context']])
         : null;
 }
-if ($parametersProvider) {
-    $this->parameters = array_merge($this->parameters, $parametersProvider->getConnectionParameters());
-}
 ```
 
-Two lines, deliberate, still absent upstream. Keep upstream's
-`?ConnectionParametersProviderInterface $parametersProvider = null` signature and its
-`'channel_rpc_timeout' => 0.0` default while you are in the file.
+That is the intent of #711: a provider supplies `ssl_context`, and the factory builds `context` from
+it. Restoring the fork's ordering would revert someone else's bugfix.
+
+**What to do instead:** take upstream's version unchanged, and check one thing on the consuming side
+— if any application supplies a ready-made `context` key from a
+`ConnectionParametersProviderInterface`, it is now overwritten whenever `ssl_context` is also an
+array. Such a provider must be changed to return `ssl_context` instead. Neither EnVi nor
+`Pits\rabbitmq` defines a connection-parameters provider, so this is a check, not a task.
 
 ---
 
@@ -422,7 +445,7 @@ Two lines, deliberate, still absent upstream. Keep upstream's
 
 | # | Change | Recommendation |
 |---|---|---|
-| 1 | `ProducerInterface::publish($routingKey = null)` + `Producer::publish()` using `!empty($routingKey)` instead of `$routingKey !== null`. Effect: an empty-string routing key falls back to `defaultRoutingKey` instead of publishing with an empty key. Mirrored in `RabbitMq/Fallback.php`. | **Keep.** `MessageProducer` always passes `$envelope->getRoutingKey()`, and producers rely on the empty→default fallback. It is a public-interface change, so record it in the CHANGELOG. |
+| 1 | `ProducerInterface::publish($routingKey = null)` + `Producer::publish()` using `!empty($routingKey)` instead of `$routingKey !== null`. Effect: an empty-string routing key falls back to `defaultRoutingKey` instead of publishing with an empty key. Mirrored in `RabbitMq/Fallback.php`. | **Corrected 2026-09-07: split it.** The `$routingKey = null` default and the documented `bool` return **are** needed — `MessageProducer::sendMessage()` is typed against `ProducerInterface`, branches on the return value, and passes a fourth `$headers` argument the interface does not declare. The `!empty()` fallback is **not** needed: no EnVi producer configures `default_routing_key`, so `defaultRoutingKey` is `''` and both conditions select the same value in every case. The earlier claim that "producers rely on the empty→default fallback" does not hold. Take the interface alignment, drop the behaviour change. See [`specs/04-producer-publish-contract.md`](specs/04-producer-publish-contract.md) §1.1. |
 | 2 | `Producer::publish(..., array $headers = null)` — implicit nullable, deprecated in PHP 8.4. | Re-apply as `?array $headers = null`. This is the only implicit nullable you will be *adding*; upstream is otherwise clean. |
 | 3 | `BatchConsumer::batchConsume()` renames `'Consumer requested stop'` → `'Consumer requested restart'` **and drops `$this->handleProcessMessages($e->getHandleCode());`**. | **Restore the dropped call** unless someone can point at the reason it was removed. Upstream still has it. Without it, a `StopConsumerException`'s handle code is discarded and the in-flight batch is neither acked nor rejected before `stopConsuming()`. The log rename is harmless — keep it if the wording matters operationally. |
 | 4 | `RabbitMq/Fallback.php.bak` is committed. | Do not carry over. Confirmed still present at HEAD. |
@@ -446,9 +469,10 @@ Two lines, deliberate, still absent upstream. Keep upstream's
    distinct major). Upstream's 2.11 line stopped at **2.11.2**; this fork's `2.11.3`–`2.11.9` are
    fork-local releases with no upstream counterpart. That collision is what made this analysis
    necessary in the first place — do not repeat it.
-4. Re-apply the enhancements in order: **E-4 → E-3 → E-2 → E-1**. E-3 must land before E-2 (E-2
-   constructs the widened events). E-4 is independent and trivial, so it makes a good first commit
-   to validate the pipeline. Resolve the §7 decisions as you go.
+4. Re-apply the enhancements in order: **E-1 → E-3 → E-2**. E-3 must land before E-2 (E-2
+   constructs the widened events). E-1 is independent and is the only one EnVi strictly needs, so
+   it makes the best first commit. Resolve the §7 decisions as you go. Per-enhancement
+   implementation specs, including ready-to-paste PR text: [`specs/`](specs/README.md).
 5. Add tests for the re-applied features. Neither this fork nor upstream has any coverage for
    publisher confirms or the batch idle-timeout path; both are testable and both are worth pinning.
    The event reshape *is* already covered (`Tests/Event/*Test.php` reference `getAMQPMessages`) —
@@ -480,7 +504,7 @@ Existing coverage relevant to the enhancements:
 | E-1 publisher confirms | **No.** No `ProducerTest` in either tree. |
 | E-2 batch consumer events / idle timeout | **No.** No `BatchConsumerTest` in either tree. |
 | E-3 event reshape | Partially — `Tests/Event/{Before,After}ProcessingMessageEventTest.php`, `Tests/Event/OnIdleEventTest.php`, `Tests/RabbitMq/ConsumerTest.php` reference the plural API. |
-| E-4 connection factory ordering | Partially — `Tests/RabbitMq/AMQPConnectionFactoryTest.php` exists; the provider-overrides-context case is untested. |
+| ~~E-4 connection factory ordering~~ | Withdrawn — not a fork change (§6). Take upstream's `Tests/RabbitMq/AMQPConnectionFactoryTest.php` as-is. |
 
 Minimum new tests worth writing:
 
@@ -516,9 +540,10 @@ the GitHub API rather than the extracted tree.
 ## 11. Consumer audit and migration scope
 
 *Added 2026-09-04, from the consuming-project side. This section does not change §3 (the blockers),
-§4 (what a re-fork gives for free), §5, §7 or §8 — all of which stand. It refines §6's "all four
-must be carried over" by establishing **which consumers are actually in scope**, and it converts
-E-2/E-3 from a requirement into a costed choice.*
+§4 (what a re-fork gives for free), §5 or §8 — all of which stand. It refines §6's original "all
+four must be carried over" by establishing **which consumers are actually in scope**, and it
+converts E-2/E-3 from a requirement into a costed choice. §7 item 1 and §11.2 were corrected on
+2026-09-07; E-4 was withdrawn the same day, so §6 now covers three enhancements, not four.*
 
 ### 11.1 Scope decision
 
@@ -538,23 +563,37 @@ trees: `Redbus` (856), `EnVi` (352), `EnViSCPDaq` (155), `Bundles` (128). `Porta
 
 ### 11.2 EnVi configures no batch consumers
 
-This is the finding that matters for §6. EnVi's `config/packages/old_sound_rabbit_mq.yaml` (identical
-across `Merge`, `Releases/1.10.1`, `Development/GitLab/1.10.1`, `Development/1.10.1`) has exactly
-three sections:
+This is the finding that matters for §6. EnVi's `config/packages/old_sound_rabbit_mq.yaml` has
+exactly three sections in every tree:
 
 ```yaml
 old_sound_rabbit_mq:
     connections:        # default
-    producers:          # 13 — several with confirm_select: true, confirm_timeout: 2
-    dynamic_consumers:  # 11 — each with idle_timeout: 20
+    producers:          # some with confirm_select: true, confirm_timeout: 5
+    dynamic_consumers:  # each with idle_timeout: 20
 ```
 
-No `batch_consumers:` key and no `consumers:` key. Confirmed against the compiled container
-(`EnVi/Development/1.10.1/var/cache/dev/App_KernelDevDebugContainer.xml`): 11 ×
-`old_sound_rabbit_mq.*_consumer_dynamic`, 13 × `old_sound_rabbit_mq.*_producer`, **zero batch
-consumer instances**. `old_sound_rabbit_mq.batch_consumer_command` and the `batch_consumer.class`
-parameter do appear, but the bundle registers those unconditionally — not evidence of use. There is
-no `BatchConsumerInterface` implementation anywhere in EnVi.
+> **Correction, 2026-09-07.** The earlier revision called the four configs "identical" and gave
+> `13` producers / `11` dynamic consumers / `confirm_timeout: 2`. Re-counted from the YAML, they
+> differ per tree and the timeout is `5`:
+>
+> | Tree | producers | dynamic_consumers | `confirm_select: true` |
+> |---|---|---|---|
+> | `Development/1.10.1` | 16 | 9 | 3 |
+> | `Development/GitLab/1.10.1` | 16 | 9 | 3 |
+> | `Merge` | 17 | 10 | 2 |
+> | `Releases/1.10.1` | 18 | 10 | 3 |
+>
+> The producers carrying confirms in `Development/1.10.1` are `assessment`, `delay` and
+> `event_bus`; `Merge` lacks one of them. This sharpens §11.7 item 1 — the trees are not
+> interchangeable, so the migration target has to be named before the config is treated as known.
+
+No `batch_consumers:` key and no `consumers:` key in any tree, and no `default_routing_key` on any
+producer. Confirmed against the compiled container
+(`EnVi/Development/1.10.1/var/cache/dev/App_KernelDevDebugContainer.xml`): **zero batch consumer
+instances**. `old_sound_rabbit_mq.batch_consumer_command` and the `batch_consumer.class` parameter
+do appear, but the bundle registers those unconditionally — not evidence of use. There is no
+`BatchConsumerInterface` implementation anywhere in EnVi.
 
 ### 11.3 For EnVi, the idle-timeout behaviour already comes from upstream
 
@@ -627,7 +666,7 @@ using §6.3's additive design:
   Redbus is eventually migrated — against whatever upstream looks like then.
 
 If instead you want the smallest possible fork, dropping E-2/E-3 is **safe for EnVi** and reduces the
-payload to ~90 lines across 4 files (E-1, plus optionally E-4). In that case:
+payload to ~90 lines across 4 files (E-1 only — E-4 no longer exists). In that case:
 
 - `Bundles/CoreBundle/{main,doctrine}/Tests/EventListener/RabbitMQEventSubscriberTest.php:51` mocks
   `DequeuerInterface` and would need to mock `Consumer` instead — a one-line fix.
@@ -641,9 +680,9 @@ timeout-throws behaviour. §6 E-1(a)–(c) is the right way to re-apply it.
 
 Redbus staying on `2.11.*` while EnVi moves means:
 
-- The **2.11 line becomes frozen legacy** — still on Symfony `^6.0` / PHP `^7.4|^8.0`, carrying all
-  four enhancements, receiving nothing from upstream, and still exposed to the §3 blockers should
-  anyone try to move it.
+- The **2.11 line becomes frozen legacy** — still on Symfony `^6.0` / PHP `^7.4|^8.0`, carrying
+  E-1–E-3, receiving nothing from upstream, and still exposed to the §3 blockers should anyone try
+  to move it.
 - **Redbus cannot simply adopt the new fork later** unless E-2/E-3 are present in it — see §11.4.
   This is the strongest practical argument for carrying them now.
 - Version ranges must not collide. Redbus pins `2.11.*`, so anything outside that range is safe;
@@ -658,7 +697,8 @@ Redbus staying on `2.11.*` while EnVi moves means:
 Independently confirmed from the consuming side, and consistent with this document:
 
 - No files added or removed by the fork; `RabbitMq/Fallback.php.bak` is committed (§7 item 4).
-- All four enhancements absent from upstream 2.19.0.
+- All enhancements absent from upstream 2.19.0 — but see §6: E-4 was never one of them, so the
+  real count is three, not four.
 - `BatchConsumer extends BaseAmqp implements DequeuerInterface` — not a `Consumer` — which is why the
   event widening is a prerequisite for E-2 (§6.3).
 - Nothing outside this fork's own sources calls `getAMQPMessage()` / `getAMQPMessages()`. Every
@@ -681,9 +721,12 @@ Corrections to `FORK-MIGRATION-NOTES.md`, which this document supersedes on both
    `Development/GitLab/1.10.1` and `Development/1.10.1*` all carry the fork; `Trunk` and everything
    ≤ `1.9.2` are still on upstream `php-amqplib/rabbitmq-bundle: ^2.6`. The producer sets differ
    slightly between trees (`Merge` shows 2 × `confirm_select`, the others 3 ×).
-2. **Verify against deployed configuration**, not just the checkouts — in particular that no EnVi
-   consumer sets `idle_timeout_exit_code` or `keep_alive` (which would change the §11.3 trace), and
-   that no batch consumer has been added since.
+2. ~~**Verify against deployed configuration**~~ — **partially closed 2026-09-07.** Re-checked
+   across all four trees' `config/packages/old_sound_rabbit_mq.yaml`: no `keep_alive`, no
+   `idle_timeout_exit_code`, no `batch_consumers`, no `default_routing_key`. The §11.3 trace holds.
+   **Still open:** this was verified against the *checkouts* only. The deployed configuration —
+   including environment overrides and anything under `config/packages/{env}/` — has not been
+   inspected.
 3. **Whether to upstream E-1.** Publisher confirms is a general AMQP feature, small and additive, with
    opt-in config defaulting to off. If `php-amqplib/RabbitMqBundle` accepts it, EnVi could depend on
    upstream directly and this fork would no longer be needed for EnVi at all. Worth checking for an
